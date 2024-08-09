@@ -1,11 +1,15 @@
 import './App.css';
 import io from 'socket.io-client';
 import React, { useEffect, useRef, useState } from 'react';
-
-import IconButton from '@mui/material/IconButton';
-import Badge from '@mui/material/Badge';
+import { Row } from 'reactstrap';
 import Input from '@mui/material/Input';
 import Button from '@mui/material/Button';
+import IconButton from '@mui/material/IconButton';
+import VideocamIcon from '@mui/icons-material/Videocam';
+import VideocamOffIcon from '@mui/icons-material/VideocamOff';
+import MicIcon from '@mui/icons-material/Mic';
+import MicOffIcon from '@mui/icons-material/MicOff';
+import CallEndIcon from '@mui/icons-material/CallEnd';
 
 const socket = io('http://localhost:3001');
 
@@ -14,55 +18,77 @@ const VideoCall = () => {
 
     const [video, setVideo] = useState(false);
     const [audio, setAudio] = useState(false);
-    const [screen, setScreen] = useState(false);
-    const [showModal, setShowModal] = useState(false);
-    const [screenAvailable, setScreenAvailable] = useState(false);
-    const [message, setMessage] = useState("");
-    const [messages, setMessages] = useState([]);
-    const [newMessages, setNewMessages] = useState(0);
     const [askForUsername, setAskForUsername] = useState(true);
     const [username, setUsername] = useState("");
-    const [videoAvailable, setVideoAvailable] = useState(false);
-    const [audioAvailable, setAudioAvailable] = useState(false);
 
     useEffect(() => {
         getUserInitMedia();
+
+        socket.on('message', (message) => {
+            console.log("Received message from server:", message);
+        });
+
+        return () => {
+            socket.off('message');
+        };
     }, []);
 
     const getUserInitMedia = () => {
-        navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(str => {
-            userVideo.current.srcObject = str;
-        });
+        navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+            .then(stream => {
+                userVideo.current.srcObject = stream;
+                setVideo(true);
+                setAudio(true);
+            })
+            .catch(error => {
+                setVideo(false);
+                setAudio(false);
+            });
     }
 
-    const getPermissions = async () => {
-        try{
-            await navigator.mediaDevices.getUserMedia({ video: true })
-                .then(() => setVideoAvailable(true))
-                .catch(() => setVideoAvailable(false))
+    const getUserMedia = () => {
+        if ( video || audio )
+        {
+            navigator.mediaDevices.getUserMedia({ video: video, audio: audio })
+                .then(stream => {
+                    try {
+                        window.localStream.getTracks().forEach(track => track.stop())
+                    } catch(e) { console.log(e) }
 
-            await navigator.mediaDevices.getUserMedia({ audio: true })
-                .then(() => setAudioAvailable(true))
-                .catch(() => setAudioAvailable(false))
+                    window.localStream = stream
+                    userVideo.current.srcObject = stream;
+                })
+                .catch(error => {
+                });
+        }
+        else
+        {
+            // ToDo: get the permission
+        }
+    }
 
-            if (navigator.mediaDevices.getDisplayMedia) {
-                setScreenAvailable(true);
-            } else {
-                setScreenAvailable(false);
-            }
+    const handleVideo = () => {
+        setVideo(!video)
+        getUserMedia();
+    }
 
-            if (videoAvailable || audioAvailable) {
-                navigator.mediaDevices.getUserMedia({ video: videoAvailable, audio: audioAvailable})
-                    .then((stream) => {
-                        window.localStream = stream
-                    })
-                    .catch((e) => console.log(e))
-            }
-        } catch(e) { console.log(e) }
+    const handleAudio = () => {
+        setAudio(!audio)
+        getUserMedia();
+    }
+
+    const handleEndCall = () => {
+        try {
+            let tracks = userVideo.current.srcObject.getTracks()
+            tracks.forEach(track => track.stop())
+        } catch (e) {}
+        window.location.href = "/"
     }
 
     const connect = () => {
         setAskForUsername(false);
+        getUserMedia();
+        socket.emit('join', username);
     }
 
     return (
@@ -76,7 +102,8 @@ const VideoCall = () => {
                     }}>
                         <p style={{margin: 0, fontWeight: "bold", paddingRight: "50px"}}>Set your username</p>
                         <Input placeholder="Username" value={username} onChange={e => setUsername(e.target.value)}/>
-                        <Button variant="contained" color="primary" onClick={connect} style={{margin: "20px"}}>Connect</Button>
+                        <Button variant="contained" color="primary" onClick={connect}
+                                style={{margin: "20px"}}>Connect</Button>
                     </div>
 
                     <div style={{justifyContent: "center", textAlign: "center", paddingTop: "40px"}}>
@@ -87,9 +114,29 @@ const VideoCall = () => {
                 </div>
                 :
                 <div>
-                    <button>Toggle Video</button>
-                    <button>Toggle Audio</button>
-                    <button>End Call</button>
+                    <div className="btn-down"
+                         style={{backgroundColor: "whitesmoke", color: "whitesmoke", textAlign: "center"}}>
+                        <IconButton style={{color: "#424242"}} onClick={handleVideo}>
+                            {(video === true) ? <VideocamIcon/> : <VideocamOffIcon/>}
+                        </IconButton>
+
+                        <IconButton style={{color: "#424242"}} onClick={handleAudio}>
+                            {audio === true ? <MicIcon/> : <MicOffIcon/>}
+                        </IconButton>
+
+                        <IconButton style={{color: "#f44336"}} onClick={handleEndCall}>
+                            <CallEndIcon/>
+                        </IconButton>
+                    </div>
+
+                    <div className="container">
+                        <Row id="main" className="flex-container" style={{margin: 0, padding: 0}}>
+                            <video id="my-video" ref={userVideo} autoPlay muted style={{
+                                borderStyle: "solid", borderColor: "#bdbdbd", margin: "10px", objectFit: "fill",
+                                width: "100%", height: "100%"
+                            }}></video>
+                        </Row>
+                    </div>
                 </div>
             }
         </div>
